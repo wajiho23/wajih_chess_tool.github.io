@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess.com Games Downloader</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --background: #1a1a1a;
+            --text: #ecf0f1;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            background: var(--background);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: var(--secondary);
+        }
+
+        .form-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        input, button {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+            transition: all 0.3s ease;
+        }
+
+        input:focus, button:hover {
+            outline: none;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        button {
+            background: var(--secondary);
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        .results {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .game-list {
+            max-height: 400px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+
+        .game-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .download-btn {
+            display: none;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+
+            .form-group {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Chess.com Games Downloader</h1>
+        <form id="gameForm">
+            <div class="form-group">
+                <input type="text" id="username" placeholder="Chess.com Username" required>
+                <input type="date" id="startDate" required>
+                <input type="date" id="endDate" required>
+            </div>
+            <button type="submit">Get Games</button>
+        </form>
+
+        <div class="loader">⏳ Loading games...</div>
+
+        <div class="results">
+            <div id="gameCount"></div>
+            <div class="game-list" id="gameList"></div>
+            <button class="download-btn" id="downloadBtn">Download PGN</button>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('gameForm');
+        const loader = document.querySelector('.loader');
+        const results = document.querySelector('.results');
+        const gameList = document.getElementById('gameList');
+        const downloadBtn = document.getElementById('downloadBtn');
+        let allPGNs = [];
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            if (!username || !startDate || !endDate) return;
+
+            loader.style.display = 'block';
+            results.style.display = 'none';
+            gameList.innerHTML = '';
+            allPGNs = [];
+
+            try {
+                const games = await fetchGames(username, startDate, endDate);
+                displayResults(games);
+            } catch (error) {
+                console.error(error);
+                alert('Error fetching games. Please try again.');
+            } finally {
+                loader.style.display = 'none';
+            }
+        });
+
+        async function fetchGames(username, startDate, endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const months = getMonthsArray(start, end);
+            const allGames = [];
+
+            for (const month of months) {
+                const response = await fetch(
+                    `https://api.chess.com/pub/player/${username}/games/${month}`
+                );
+                
+                if (!response.ok) continue;
+                
+                const { games } = await response.json();
+                if (!games) continue;
+
+                const filteredGames = games.filter(game => {
+                    const gameDate = new Date(game.end_time * 1000);
+                    return gameDate >= start && gameDate <= end;
+                });
+
+                allGames.push(...filteredGames);
+            }
+
+            return allGames;
+        }
+
+        function getMonthsArray(start, end) {
+            const months = [];
+            const current = new Date(start);
+            current.setDate(1);
+
+            while (current <= end) {
+                const year = current.getFullYear();
+                const month = String(current.getMonth() + 1).padStart(2, '0');
+                months.push(`${year}/${month}`);
+                current.setMonth(current.getMonth() + 1);
+            }
+
+            return months;
+        }
+
+        function displayResults(games) {
+            results.style.display = 'block';
+            gameList.innerHTML = games.map(game => `
+                <div class="game-item">
+                    <div>
+                        ${new Date(game.end_time * 1000).toLocaleDateString()}
+                        <br>${game.time_control} • ${game.rules}
+                    </div>
+                    <div>
+                        ${game.white.username} vs ${game.black.username}
+                        <br>${game.white.result} - ${game.black.result}
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('gameCount').innerHTML = `
+                Found ${games.length} games between 
+                ${document.getElementById('startDate').value} and 
+                ${document.getElementById('endDate').value}
+            `;
+
+            allPGNs = games.map(game => game.pgn);
+            downloadBtn.style.display = games.length ? 'block' : 'none';
+        }
+
+        downloadBtn.addEventListener('click', () => {
+            const blob = new Blob([allPGNs.join('\n\n')], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chess_games_${Date.now()}.pgn`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>
